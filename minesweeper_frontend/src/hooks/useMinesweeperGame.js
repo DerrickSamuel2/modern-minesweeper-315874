@@ -309,10 +309,14 @@ export function useMinesweeperGame(options) {
       // First reveal starts the game + timer
       if (status === "ready") {
         setStatus("playing");
-        startTimerIfNeeded();
-      } else {
-        startTimerIfNeeded();
       }
+      startTimerIfNeeded();
+
+      // IMPORTANT: keep the setGrid updater PURE (no side-effects like setStatus/stopTimer/etc).
+      // React 18 StrictMode may invoke updater functions more than once during development,
+      // so side-effects inside updaters can lead to unreliable game-over propagation.
+      let didHitMine = false;
+      let revealedCountDeltaOuter = 0;
 
       setGrid((prev) => {
         let working = prev;
@@ -328,11 +332,8 @@ export function useMinesweeperGame(options) {
         const cell = working[r][c];
         if (cell.isRevealed || cell.isFlagged) return working;
 
-        // If mine -> lose
-        // End game synchronously to ensure the status/timer update is not lost due to
-        // React scheduling/StrictMode replays of state updaters.
         if (cell.isMine) {
-          endGame("lost");
+          didHitMine = true;
           return revealAllMines(working);
         }
 
@@ -342,19 +343,27 @@ export function useMinesweeperGame(options) {
           c
         );
 
-        if (revealedCountDelta > 0) {
-          setRevealedSafeCount((count) => {
-            const nextCount = count + revealedCountDelta;
-            window.setTimeout(() => maybeWin(nextCount), 0);
-            return nextCount;
-          });
-        }
-
+        revealedCountDeltaOuter = revealedCountDelta;
         return nextGrid;
       });
+
+      // Apply side-effects after state calculation.
+      if (didHitMine) {
+        endGame("lost");
+        return;
+      }
+
+      if (revealedCountDeltaOuter > 0) {
+        setRevealedSafeCount((count) => count + revealedCountDeltaOuter);
+      }
     },
-    [endGame, maybeWin, mines, startTimerIfNeeded, status]
+    [endGame, mines, startTimerIfNeeded, status]
   );
+
+  // Evaluate win condition after `revealedSafeCount` updates.
+  useEffect(() => {
+    maybeWin(revealedSafeCount);
+  }, [maybeWin, revealedSafeCount]);
 
   const revealOrFlag = useCallback(
     (r, c, intent) => {
