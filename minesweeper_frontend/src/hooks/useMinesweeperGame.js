@@ -329,8 +329,10 @@ export function useMinesweeperGame(options) {
         if (cell.isRevealed || cell.isFlagged) return working;
 
         // If mine -> lose
+        // End game synchronously to ensure the status/timer update is not lost due to
+        // React scheduling/StrictMode replays of state updaters.
         if (cell.isMine) {
-          window.setTimeout(() => endGame("lost"), 0);
+          endGame("lost");
           return revealAllMines(working);
         }
 
