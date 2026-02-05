@@ -124,7 +124,7 @@ function placeMinesAndComputeCounts(baseGrid, mineCount, safeR, safeC) {
     }
   }
 
-  return grid;
+  return { grid, minesPlaced: minesToPlace };
 }
 
 /**
@@ -200,14 +200,22 @@ function revealAllMines(grid) {
 export function useMinesweeperGame(options) {
   const { rows, cols, mines } = options;
 
-  const totalSafeCells = useMemo(() => rows * cols - mines, [rows, cols, mines]);
-
   const [status, setStatus] = useState(/** @type {GameStatus} */ ("ready"));
   const [grid, setGrid] = useState(() => createEmptyGrid(rows, cols));
   const [flagMode, setFlagMode] = useState(false);
 
   const [flagsUsed, setFlagsUsed] = useState(0);
   const [revealedSafeCount, setRevealedSafeCount] = useState(0);
+
+  // Tracks the *actual* number of mines placed after the first click.
+  // This can be lower than the configured `mines` when the safe zone is large
+  // (e.g., tiny boards), and win detection must use this value.
+  const [actualMines, setActualMines] = useState(mines);
+
+  const totalSafeCells = useMemo(
+    () => rows * cols - actualMines,
+    [rows, cols, actualMines]
+  );
 
   const [secondsElapsed, setSecondsElapsed] = useState(0);
 
@@ -235,9 +243,10 @@ export function useMinesweeperGame(options) {
     setFlagMode(false);
     setFlagsUsed(0);
     setRevealedSafeCount(0);
+    setActualMines(mines);
     setSecondsElapsed(0);
     minesPlacedRef.current = false;
-  }, [rows, cols, stopTimer]);
+  }, [rows, cols, mines, stopTimer]);
 
   // Ensure grid resets if dimensions change
   useEffect(() => {
@@ -254,6 +263,10 @@ export function useMinesweeperGame(options) {
 
   const maybeWin = useCallback(
     (nextRevealedSafeCount) => {
+      // Don't allow a win check until mines are actually placed; this also
+      // avoids using a stale/incorrect safe-cell threshold.
+      if (!minesPlacedRef.current) return;
+
       if (nextRevealedSafeCount >= totalSafeCells) {
         endGame("won");
       }
@@ -306,7 +319,9 @@ export function useMinesweeperGame(options) {
 
         // Place mines on first reveal to guarantee a safe initial click.
         if (!minesPlacedRef.current) {
-          working = placeMinesAndComputeCounts(working, mines, r, c);
+          const placed = placeMinesAndComputeCounts(working, mines, r, c);
+          working = placed.grid;
+          setActualMines(placed.minesPlaced);
           minesPlacedRef.current = true;
         }
 
