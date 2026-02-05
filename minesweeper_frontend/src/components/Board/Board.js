@@ -8,6 +8,7 @@ import Cell from "../Cell/Cell";
 export default function Board({ grid, status, onReveal, onFlag }) {
   const rows = grid.length;
   const cols = grid[0]?.length ?? 0;
+  const isLocked = status !== "playing" && status !== "ready";
 
   const boardStyle = useMemo(
     () => ({
@@ -27,13 +28,14 @@ export default function Board({ grid, status, onReveal, onFlag }) {
       style={boardStyle}
       role="grid"
       aria-label="Minesweeper board"
+      aria-disabled={isLocked}
     >
       {grid.map((row) =>
         row.map((cell) => (
           <Cell
             key={`${cell.r}-${cell.c}`}
             cell={cell}
-            disabled={status === "won" || status === "lost"}
+            isLocked={isLocked}
             onReveal={() => onReveal(cell.r, cell.c)}
             onFlag={() => onFlag(cell.r, cell.c)}
           />

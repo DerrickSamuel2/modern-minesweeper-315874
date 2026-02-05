@@ -15,16 +15,16 @@ const COUNT_COLORS = {
  * PUBLIC_INTERFACE
  * Single cell in the Minesweeper grid.
  */
-export default function Cell({ cell, disabled, onReveal, onFlag }) {
+export default function Cell({ cell, isLocked, onReveal, onFlag }) {
   const handleClick = (e) => {
     e.preventDefault();
-    if (disabled) return;
+    if (isLocked) return;
     onReveal();
   };
 
   const handleContextMenu = (e) => {
     e.preventDefault(); // prevent browser context menu
-    if (disabled) return;
+    if (isLocked) return;
     onFlag();
   };
 
@@ -63,7 +63,7 @@ export default function Cell({ cell, disabled, onReveal, onFlag }) {
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       aria-label={label}
-      aria-disabled={disabled}
+      aria-disabled={isLocked}
       disabled={false /* keep focus/hover even when game ended; logic blocks actions */}
       style={countStyle}
     >

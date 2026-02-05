@@ -41,21 +41,24 @@ test("clicking a mine ends the game, reveals mines, stops timer, and disables bo
   expect(screen.getByText(/^\d+:\d{2}$/).textContent).toBe(timeAtLoss);
 
   // Further interactions should be disabled:
-  // Clicking a hidden cell should not reveal it (aria-label should remain "Hidden").
   const hiddenBefore = within(board).queryAllByLabelText("Hidden").length;
-  if (hiddenBefore > 0) {
-    const aHiddenCell = within(board).getAllByLabelText("Hidden")[0];
-    await user.click(aHiddenCell);
-    const hiddenAfter = within(board).queryAllByLabelText("Hidden").length;
-    expect(hiddenAfter).toBe(hiddenBefore);
+  const flaggedBefore = within(board).queryAllByLabelText("Flagged").length;
+
+  // Attempt left click on a hidden cell (if any) - should not change hidden count.
+  const hiddenCellsBefore = within(board).queryAllByLabelText("Hidden");
+  if (hiddenCellsBefore.length > 0) {
+    await user.click(hiddenCellsBefore[0]);
   }
 
-  // Right-click should also be blocked after loss (no new flags placed).
-  const flaggedBefore = within(board).queryAllByLabelText("Flagged").length;
-  const hiddenCells = within(board).queryAllByLabelText("Hidden");
-  if (hiddenCells.length > 0) {
-    await user.pointer([{ target: hiddenCells[0], keys: "[MouseRight]" }]);
+  // Attempt right click on a hidden cell (if any) - should not place a new flag.
+  const hiddenCellsForRightClick = within(board).queryAllByLabelText("Hidden");
+  if (hiddenCellsForRightClick.length > 0) {
+    await user.pointer([{ target: hiddenCellsForRightClick[0], keys: "[MouseRight]" }]);
   }
+
+  const hiddenAfter = within(board).queryAllByLabelText("Hidden").length;
   const flaggedAfter = within(board).queryAllByLabelText("Flagged").length;
+
+  expect(hiddenAfter).toBe(hiddenBefore);
   expect(flaggedAfter).toBe(flaggedBefore);
 });

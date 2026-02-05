@@ -24,6 +24,16 @@ function keyOf(r, c) {
 }
 
 /**
+ * Create a deep copy of the grid (cell objects are cloned).
+ * Keeping cloning centralized avoids subtle mutation bugs.
+ * @param {CellModel[][]} grid
+ * @returns {CellModel[][]}
+ */
+function cloneGrid(grid) {
+  return grid.map((row) => row.map((cell) => ({ ...cell })));
+}
+
+/**
  * Get neighbor coordinates (8-direction).
  * @param {number} rows
  * @param {number} cols
@@ -278,15 +288,18 @@ export function useMinesweeperGame(options) {
     setFlagMode((v) => !v);
   }, []);
 
+  const isLocked = useMemo(() => status !== "playing" && status !== "ready", [status]);
+
   const toggleFlag = useCallback(
     (r, c) => {
-      if (status === "won" || status === "lost") return;
+      // Hard block any flag changes after game ended.
+      if (isLocked) return;
 
       setGrid((prev) => {
         const cell = prev[r][c];
         if (cell.isRevealed) return prev;
 
-        const next = prev.map((row) => row.map((cc) => ({ ...cc })));
+        const next = cloneGrid(prev);
         const target = next[r][c];
 
         if (!target.isFlagged && flagsUsed >= mines) {
@@ -299,65 +312,55 @@ export function useMinesweeperGame(options) {
         return next;
       });
     },
-    [flagsUsed, mines, status]
+    [flagsUsed, isLocked, mines]
   );
 
   const reveal = useCallback(
     (r, c) => {
+      // Hard block any reveal after game ended.
       if (status === "won" || status === "lost") return;
 
-      // First reveal starts the game + timer
+      // If this click transitions ready -> playing, start status + timer.
       if (status === "ready") {
         setStatus("playing");
       }
       startTimerIfNeeded();
 
-      // IMPORTANT: keep the setGrid updater PURE (no side-effects like setStatus/stopTimer/etc).
-      // React 18 StrictMode may invoke updater functions more than once during development,
-      // so side-effects inside updaters can lead to unreliable game-over propagation.
-      let didHitMine = false;
-      let revealedCountDeltaOuter = 0;
+      // Compute next state WITHOUT side-effects inside setState updaters.
+      // This avoids React 18 StrictMode double-invocation issues.
+      let working = grid;
 
-      setGrid((prev) => {
-        let working = prev;
+      // Place mines on first reveal to guarantee a safe initial click.
+      if (!minesPlacedRef.current) {
+        const placed = placeMinesAndComputeCounts(working, mines, r, c);
+        working = placed.grid;
+        minesPlacedRef.current = true;
+        setActualMines(placed.minesPlaced);
+      }
 
-        // Place mines on first reveal to guarantee a safe initial click.
-        if (!minesPlacedRef.current) {
-          const placed = placeMinesAndComputeCounts(working, mines, r, c);
-          working = placed.grid;
-          setActualMines(placed.minesPlaced);
-          minesPlacedRef.current = true;
-        }
+      const cell = working[r][c];
+      if (cell.isRevealed || cell.isFlagged) {
+        // Still commit `working` because mine placement may have occurred.
+        if (working !== grid) setGrid(working);
+        return;
+      }
 
-        const cell = working[r][c];
-        if (cell.isRevealed || cell.isFlagged) return working;
-
-        if (cell.isMine) {
-          didHitMine = true;
-          return revealAllMines(working);
-        }
-
-        const { grid: nextGrid, revealedCountDelta } = floodReveal(
-          working,
-          r,
-          c
-        );
-
-        revealedCountDeltaOuter = revealedCountDelta;
-        return nextGrid;
-      });
-
-      // Apply side-effects after state calculation.
-      if (didHitMine) {
+      // Loss flow: immediately lose and force-reveal all mines.
+      if (cell.isMine) {
+        const nextGrid = revealAllMines(working);
+        setGrid(nextGrid);
         endGame("lost");
         return;
       }
 
-      if (revealedCountDeltaOuter > 0) {
-        setRevealedSafeCount((count) => count + revealedCountDeltaOuter);
+      const { grid: nextGrid, revealedCountDelta } = floodReveal(working, r, c);
+      setGrid(nextGrid);
+
+      if (revealedCountDelta > 0) {
+        setRevealedSafeCount((count) => count + revealedCountDelta);
       }
     },
-    [endGame, mines, startTimerIfNeeded, status]
+    [endGame, grid, mines, startTimerIfNeeded, status]
   );
 
   // Evaluate win condition after `revealedSafeCount` updates.
@@ -367,6 +370,9 @@ export function useMinesweeperGame(options) {
 
   const revealOrFlag = useCallback(
     (r, c, intent) => {
+      // Strict interaction lock: once won/lost, nothing mutates.
+      if (isLocked) return;
+
       if (intent === "flag") {
         toggleFlag(r, c);
         return;
@@ -377,7 +383,7 @@ export function useMinesweeperGame(options) {
       }
       reveal(r, c);
     },
-    [flagMode, reveal, toggleFlag]
+    [flagMode, isLocked, reveal, toggleFlag]
   );
 
   const minesRemaining = useMemo(() => {
@@ -392,6 +398,7 @@ export function useMinesweeperGame(options) {
     mines,
 
     status,
+    isLocked,
     flagMode,
     flagsUsed,
     minesRemaining,
